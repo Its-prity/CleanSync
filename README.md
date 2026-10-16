@@ -2,9 +2,13 @@
 > **High-Performance Customer Data Onboarding & Sanitization Web App**  
 > *Zero Data Leakage • 100% In-Browser Execution • Instant CRM Normalization*
 
+🔗 **Live Production App:** [https://cleansync-cyan.vercel.app](https://cleansync-cyan.vercel.app)
+
+[![Live on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=flat&logo=vercel)](https://cleansync-cyan.vercel.app)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-6-purple.svg)](https://vitejs.dev/)
+[![Vitest](https://img.shields.io/badge/Tested%20with-Vitest-green.svg)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 
 ---
@@ -150,24 +154,11 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 npm run build
 ```
 
----
+### Running Tests
 
-## 🎬 Live 2-Minute Demo Script
-
-1. **The Hook (0:00 - 0:25)**:
-   > *"Every B2B company wastes hours manual-cleaning messy customer spreadsheets during onboarding. CleanSync automates customer data sanitization right in your browser with zero data leakage."*
-2. **The Problem (0:25 - 0:45)**:
-   > *Click **"Load Sample Messy Data"**. The table instantly populates with 25 dirty CRM contacts.*
-   > *"Notice our Data Health Score is only ~58%. We have malformed phone numbers, uppercase typos in emails, duplicate contacts, and broken date formats."*
-3. **The Solution (0:45 - 1:15)**:
-   > *Show the Cleaning Controls panel. Enable Deduplication, Email typo auto-fix, and Phone standardization.*
-   > *Click **"Run CleanSync Pipeline"**. Confetti fires! The Data Health Score jumps to **98%**!*
-   > *Click **"Diff"** on any row to show the side-by-side green/red comparison modal.*
-4. **The Export (1:15 - 1:45)**:
-   > *Click **"Download Clean CSV"** or **"Download Excel"** to demonstrate instant download.*
-   > *Click **"Download Quarantine CSV"** — explain: "Rows with unfixable structural errors are segregated for human review instead of corrupting CRM production systems."*
-5. **The Closer (1:45 - 2:00)**:
-   > *"100% private, runs entirely in the browser, and saves hours of onboarding friction."*
+```bash
+npm test
+```
 
 ---
 
