@@ -16,67 +16,80 @@ export function runCleaningPipeline(
   const processedRows: RowData[] = [];
   const timestamp = new Date().toISOString();
 
-  // Pass 1: Row-by-row cell cleaning and field mapping
-  for (const rawRow of rows) {
+  // Deep clone rows to ensure original records are never mutated
+  const inputRows: RowData[] = JSON.parse(JSON.stringify(rows));
+
+  // Pass 1: Row-by-row mapping, cell cleaning, and validation
+  inputRows.forEach((rawRow, idx) => {
     const originalRecord: Record<string, string> = { ...rawRow._original };
     const newRow: RowData = {
-      ...rawRow,
-      _id: rawRow._id || `row-${Math.random().toString(36).substring(2, 9)}`,
+      _id: rawRow._id || `row-${idx + 1}`,
+      _sourceRow: rawRow._sourceRow || idx + 2,
       _status: 'valid',
       _issues: {}
     };
 
-    // Store original if not already stored
-    if (!rawRow._original) {
+    // Initialize _original if not present
+    if (!rawRow._original || Object.keys(rawRow._original).length === 0) {
       for (const k of Object.keys(rawRow)) {
         if (!k.startsWith('_')) {
           originalRecord[k] = String(rawRow[k] ?? '');
         }
       }
     }
-    newRow._original = originalRecord;
-
-    // Field mapping application if target key is specified
-    if (columnMapping) {
+    // Apply column mapping or retain source columns
+    if (columnMapping && Object.keys(columnMapping).length > 0) {
       for (const [srcKey, targetKey] of Object.entries(columnMapping)) {
-        if (targetKey && targetKey !== 'ignore' && targetKey !== srcKey && newRow[srcKey] !== undefined) {
-          newRow[targetKey] = newRow[srcKey];
+        if (targetKey && targetKey !== 'ignore') {
+          newRow[targetKey] = rawRow[srcKey] !== undefined ? rawRow[srcKey] : '';
+          originalRecord[targetKey] = String(rawRow[srcKey] ?? '');
+        }
+      }
+    } else {
+      for (const k of Object.keys(rawRow)) {
+        if (!k.startsWith('_')) {
+          newRow[k] = rawRow[k];
+          originalRecord[k] = String(rawRow[k] ?? '');
         }
       }
     }
+    newRow._original = originalRecord;
 
-    // Cleaning rules per field
-    // 1. Full Name / Name
-    const nameKey = Object.keys(newRow).find((k) => k === 'fullName' || k.toLowerCase().includes('name') && !k.startsWith('_'));
-    if (nameKey && options.titleCaseNames) {
+    // 1. Name validation and title casing
+    const nameKey = Object.keys(newRow).find(
+      (k) => (k === 'full_name' || k === 'fullName' || k.toLowerCase().includes('name')) && !k.startsWith('_')
+    );
+    if (nameKey) {
       const before = String(newRow[nameKey] ?? '');
-      const res = cleanName(before, { titleCase: true });
+      const res = cleanName(before, { titleCase: options.titleCaseNames });
+      newRow[nameKey] = res.value;
       if (res.changed) {
-        newRow[nameKey] = res.value;
         auditLog.push({
           rowId: newRow._id,
           column: nameKey,
           before,
           after: res.value,
-          ruleApplied: res.ruleApplied || 'Title Case Conversion',
+          ruleApplied: res.ruleApplied || 'Title Case & Whitespace Cleanup',
           timestamp
         });
       }
-      if (!res.isValid && res.issue) {
-        newRow._issues = { ...newRow._issues, [nameKey]: res.issue };
+      if (res.issue) {
+        newRow._issues![nameKey] = res.issue;
       }
     }
 
-    // 2. Email Address
-    const emailKey = Object.keys(newRow).find((k) => k === 'email' || k.toLowerCase().includes('email') && !k.startsWith('_'));
+    // 2. Email normalization and syntax validation
+    const emailKey = Object.keys(newRow).find(
+      (k) => (k === 'email' || k.toLowerCase().includes('email')) && !k.startsWith('_')
+    );
     if (emailKey) {
       const before = String(newRow[emailKey] ?? '');
       const res = cleanEmail(before, {
         fixTypos: options.fixEmailTypos,
         normalizeCase: options.normalizeEmailCasing
       });
+      newRow[emailKey] = res.value;
       if (res.changed) {
-        newRow[emailKey] = res.value;
         auditLog.push({
           rowId: newRow._id,
           column: emailKey,
@@ -86,18 +99,20 @@ export function runCleaningPipeline(
           timestamp
         });
       }
-      if (!res.isValid && res.issue) {
-        newRow._issues = { ...newRow._issues, [emailKey]: res.issue };
+      if (res.issue) {
+        newRow._issues![emailKey] = res.issue;
       }
     }
 
-    // 3. Phone Number
-    const phoneKey = Object.keys(newRow).find((k) => k === 'phone' || k.toLowerCase().includes('phone') || k.toLowerCase().includes('tel') && !k.startsWith('_'));
-    if (phoneKey && options.standardizePhones) {
+    // 3. Phone number validation
+    const phoneKey = Object.keys(newRow).find(
+      (k) => (k === 'phone' || k.toLowerCase().includes('phone') || k.toLowerCase().includes('tel')) && !k.startsWith('_')
+    );
+    if (phoneKey) {
       const before = String(newRow[phoneKey] ?? '');
-      const res = cleanPhone(before, { standardize: true });
+      const res = cleanPhone(before, { standardize: options.standardizePhones });
+      newRow[phoneKey] = res.value;
       if (res.changed) {
-        newRow[phoneKey] = res.value;
         auditLog.push({
           rowId: newRow._id,
           column: phoneKey,
@@ -107,18 +122,48 @@ export function runCleaningPipeline(
           timestamp
         });
       }
-      if (!res.isValid && res.issue) {
-        newRow._issues = { ...newRow._issues, [phoneKey]: res.issue };
+      if (res.issue) {
+        newRow._issues![phoneKey] = res.issue;
       }
     }
 
-    // 4. Date
-    const dateKey = Object.keys(newRow).find((k) => k === 'signupDate' || k.toLowerCase().includes('date') && !k.startsWith('_'));
+    // 4. City whitespace trimming
+    const cityKey = Object.keys(newRow).find(
+      (k) => (k === 'city' || k.toLowerCase().includes('city') || k.toLowerCase().includes('town')) && !k.startsWith('_')
+    );
+    if (cityKey) {
+      const before = String(newRow[cityKey] ?? '');
+      const trimmed = before.trim();
+      newRow[cityKey] = trimmed;
+      if (trimmed !== before) {
+        auditLog.push({
+          rowId: newRow._id,
+          column: cityKey,
+          before,
+          after: trimmed,
+          ruleApplied: 'Trimmed whitespace from city',
+          timestamp
+        });
+      }
+      if (!trimmed) {
+        newRow._issues![cityKey] = {
+          type: 'missing_optional',
+          message: 'City is missing',
+          severity: 'warning',
+          code: 'missing_optional'
+        };
+      }
+    }
+
+    // 5. Date standardization
+    const dateKey = Object.keys(newRow).find(
+      (k) => (k === 'signup_date' || k === 'signupDate' || k.toLowerCase().includes('date')) && !k.startsWith('_')
+    );
     if (dateKey && options.standardizeDates) {
       const before = String(newRow[dateKey] ?? '');
       const res = cleanDate(before, { standardize: true });
+      newRow[dateKey] = res.value;
       if (res.changed) {
-        newRow[dateKey] = res.value;
         auditLog.push({
           rowId: newRow._id,
           column: dateKey,
@@ -128,59 +173,45 @@ export function runCleaningPipeline(
           timestamp
         });
       }
-      if (!res.isValid && res.issue) {
-        newRow._issues = { ...newRow._issues, [dateKey]: res.issue };
+      if (res.issue) {
+        newRow._issues![dateKey] = res.issue;
       }
     }
 
     processedRows.push(newRow);
-  }
+  });
 
-  // Pass 2: Deduplication
-  let uniqueRows = processedRows;
-  let duplicateRows: RowData[] = [];
+  // Pass 2: Duplicate Email Detection (after email lowercasing/normalization)
+  const emailCol = Object.keys(processedRows[0] || {}).find(
+    (k) => (k === 'email' || k.toLowerCase().includes('email')) && !k.startsWith('_')
+  ) || 'email';
 
-  if (options.deduplicate) {
-    const dedupeRes = deduplicateRows(processedRows, options.dedupeKey, options.dedupeStrategy);
-    uniqueRows = dedupeRes.uniqueRows;
-    duplicateRows = dedupeRes.duplicateRows;
+  const dedupeResult = deduplicateRows(processedRows, emailCol, options.dedupeStrategy);
+  const activeRows = dedupeResult.uniqueRows;
+  const duplicateRows = dedupeResult.duplicateRows;
 
-    for (const dup of duplicateRows) {
-      auditLog.push({
-        rowId: dup._id,
-        column: options.dedupeKey,
-        before: String(dup[options.dedupeKey] ?? ''),
-        after: '[DUPLICATE REMOVED]',
-        ruleApplied: `Deduplication (${options.dedupeStrategy})`,
-        timestamp
-      });
-    }
-  }
-
-  // Pass 3: Segregation into Clean vs Quarantine
+  // Pass 3: Status Calculation and Segregation
   const cleanedRows: RowData[] = [];
   const quarantineRows: RowData[] = [];
 
-  for (const row of uniqueRows) {
+  for (const row of activeRows) {
     const issues = Object.values(row._issues || {});
-    const hasFatalError = issues.some((iss) => iss.severity === 'error');
+    const hasError = issues.some((iss) => iss.severity === 'error');
+    const hasWarning = issues.some((iss) => iss.severity === 'warning');
 
-    if (hasFatalError && options.quarantineInvalidRows) {
-      row._status = 'quarantined';
+    if (hasError) {
+      row._status = 'invalid';
       quarantineRows.push(row);
+    } else if (hasWarning) {
+      row._status = 'warning';
+      cleanedRows.push(row); // Warnings are non-invalid and kept in clean file
     } else {
-      row._status = 'cleaned';
+      row._status = 'valid';
       cleanedRows.push(row);
     }
   }
 
-  // If deduplication strategy was quarantine, add duplicates to quarantine
-  if (options.deduplicate && options.dedupeStrategy === 'quarantine') {
-    quarantineRows.push(...duplicateRows);
-  }
-
-  // Quality score analysis
-  const initialAnalysis = analyzeDataset(rows);
+  const initialAnalysis = analyzeDataset(inputRows);
   const finalAnalysis = analyzeDataset(cleanedRows);
 
   return {
@@ -191,11 +222,13 @@ export function runCleaningPipeline(
     stats: {
       initialRows: rows.length,
       cleanCount: cleanedRows.length,
-      quarantineCount: quarantineRows.length,
+      validCount: cleanedRows.filter((r) => r._status === 'valid').length,
+      warningCount: cleanedRows.filter((r) => r._status === 'warning').length,
+      invalidCount: quarantineRows.length,
       duplicateCount: duplicateRows.length,
       totalModifications: auditLog.length,
       initialScore: initialAnalysis.healthScore.score,
       finalScore: finalAnalysis.healthScore.score
-    }
+    } as any
   };
 }

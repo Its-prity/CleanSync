@@ -1,18 +1,20 @@
 export type DataType = 'email' | 'phone' | 'name' | 'date' | 'id' | 'number' | 'text' | 'unknown';
 
 export interface CellIssue {
-  type: 'invalid_email' | 'email_typo' | 'malformed_phone' | 'inconsistent_casing' | 'invalid_date' | 'missing_required' | 'duplicate';
+  type: 'invalid_email' | 'email_typo' | 'malformed_phone' | 'inconsistent_casing' | 'invalid_date' | 'missing_required' | 'missing_optional' | 'duplicate';
   message: string;
+  code?: string;
   suggestedFix?: string;
   severity: 'error' | 'warning' | 'info';
 }
 
 export interface RowData {
   _id: string;
-  _status?: 'valid' | 'cleaned' | 'quarantined' | 'duplicate';
+  _sourceRow?: number;
+  _status?: 'valid' | 'warning' | 'invalid' | 'cleaned' | 'quarantined' | 'duplicate';
   _issues?: Record<string, CellIssue>;
   _original?: Record<string, string>;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ColumnMeta {
@@ -50,4 +52,6 @@ export interface Dataset {
   rows: RowData[];
   healthScore: HealthScore;
   rawRowCount: number;
+  rawRows?: RowData[];
+  rawColumns?: ColumnMeta[];
 }

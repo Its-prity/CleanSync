@@ -1,18 +1,14 @@
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
 import { Header } from './components/layout/Header';
-import { Stepper, StepId } from './components/layout/Stepper';
-import { DropZone } from './components/upload/DropZone';
-import { HealthGauge } from './components/preview/HealthGauge';
-import { SchemaMapper } from './components/preview/SchemaMapper';
-import { DataTable } from './components/preview/DataTable';
-import { DiffModal } from './components/preview/DiffModal';
-import { RuleControls } from './components/cleaning/RuleControls';
-import { ExportPanel } from './components/export/ExportPanel';
-import { Dataset, RowData } from './types/dataset';
-import { STANDARD_CRM_SCHEMA, ColumnMapping } from './types/schema';
+import { StepNav, StepId } from './components/layout/StepNav';
+import { UploadScreen } from './components/upload/UploadScreen';
+import { MatchColumnsScreen } from './components/match/MatchColumnsScreen';
+import { ReviewScreen } from './components/review/ReviewScreen';
+import { ExportScreen } from './components/export/ExportScreen';
+import { Dataset } from './types/dataset';
+import { ColumnMapping, findMatchingField } from './types/schema';
 import { CleaningOptions, DEFAULT_CLEANING_OPTIONS, PipelineResult } from './types/cleaning';
-import { RAW_MESSY_SAMPLE_DATA } from './lib/mockData';
 import { parseFile } from './lib/parser';
 import { analyzeDataset } from './lib/detector';
 import { runCleaningPipeline } from './cleaning/pipeline';
@@ -23,18 +19,15 @@ export const App: React.FC = () => {
   const [cleaningOptions, setCleaningOptions] = useState<CleaningOptions>(DEFAULT_CLEANING_OPTIONS);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
-  const [diffModalRow, setDiffModalRow] = useState<RowData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Auto-map columns to target schema based on field aliases
   const autoMapColumns = (cols: string[]): ColumnMapping => {
     const mapping: ColumnMapping = {};
     for (const col of cols) {
-      const lower = col.toLowerCase().replace(/[\s-_]/g, '');
-      const matched = STANDARD_CRM_SCHEMA.find((std) =>
-        std.aliases.some((alias) => alias.replace(/[\s-_]/g, '') === lower)
-      );
+      const matched = findMatchingField(col);
       if (matched) {
         mapping[col] = matched.key;
       } else {
@@ -44,30 +37,27 @@ export const App: React.FC = () => {
     return mapping;
   };
 
-  // Load 1-click messy dataset
-  const handleLoadSample = () => {
+  // Load sample dataset
+  const handleLoadSample = async () => {
+    setErrorMessage(null);
     setIsLoading(true);
-    // Deep clone rows to avoid modifying mock constant
-    const rawRows: RowData[] = JSON.parse(JSON.stringify(RAW_MESSY_SAMPLE_DATA));
-    const analysis = analyzeDataset(rawRows);
-    const cols = analysis.columns.map((c) => c.key);
-
-    setDataset({
-      filename: 'sample_messy_crm_contacts.csv',
-      columns: analysis.columns,
-      rows: rawRows,
-      healthScore: analysis.healthScore,
-      rawRowCount: rawRows.length
-    });
-
-    setColumnMapping(autoMapColumns(cols));
-    setPipelineResult(null);
-    setCurrentStep('inspect');
-    setIsLoading(false);
+    try {
+      const response = await fetch('/sample-customers.csv');
+      if (!response.ok) {
+        throw new Error('Could not load /sample-customers.csv');
+      }
+      const text = await response.text();
+      const file = new File([text], 'sample-customers.csv', { type: 'text/csv' });
+      await handleFileSelected(file);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to load sample dataset.');
+      setIsLoading(false);
+    }
   };
 
   // Handle uploaded file
   const handleFileSelected = async (file: File) => {
+    setErrorMessage(null);
     setIsLoading(true);
     try {
       const parsed = await parseFile(file);
@@ -78,14 +68,16 @@ export const App: React.FC = () => {
         columns: analysis.columns,
         rows: parsed.rows,
         healthScore: analysis.healthScore,
-        rawRowCount: parsed.rows.length
+        rawRowCount: parsed.rows.length,
+        rawRows: JSON.parse(JSON.stringify(parsed.rows)),
+        rawColumns: analysis.columns,
       });
 
       setColumnMapping(autoMapColumns(parsed.columns));
       setPipelineResult(null);
-      setCurrentStep('inspect');
+      setCurrentStep('match');
     } catch (err: any) {
-      alert(`Error parsing file: ${err.message || 'Unknown error'}`);
+      setErrorMessage(err.message || 'Could not parse the selected file. Check that the file is not corrupted.');
     } finally {
       setIsLoading(false);
     }
@@ -97,11 +89,14 @@ export const App: React.FC = () => {
     setIsProcessing(true);
 
     setTimeout(() => {
-      const result = runCleaningPipeline(dataset.rows, cleaningOptions, columnMapping);
+      const sourceRows = dataset.rawRows || dataset.rows;
+      const result = runCleaningPipeline(sourceRows, cleaningOptions, columnMapping);
       setPipelineResult(result);
 
-      // Re-analyze combined dataset for display
-      const displayedRows = [...result.cleanedRows, ...result.quarantineRows];
+      // Re-analyze combined dataset for display, preserving source row order
+      const displayedRows = [...result.cleanedRows, ...result.quarantineRows].sort(
+        (a, b) => (a._sourceRow ?? 0) - (b._sourceRow ?? 0)
+      );
       const reanalysis = analyzeDataset(displayedRows);
 
       setDataset((prev) =>
@@ -109,25 +104,26 @@ export const App: React.FC = () => {
           ? {
               ...prev,
               rows: displayedRows,
-              healthScore: reanalysis.healthScore
+              columns: reanalysis.columns,
+              healthScore: reanalysis.healthScore,
             }
           : null
       );
 
-      // Fire celebratory confetti!
+      // Celebratory confetti
       try {
         confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 }
+          particleCount: 60,
+          spread: 60,
+          origin: { y: 0.6 },
         });
-      } catch (e) {
-        // Confetti fallback
+      } catch {
+        // Fallback if confetti not supported
       }
 
       setIsProcessing(false);
-      setCurrentStep('clean');
-    }, 300);
+      setCurrentStep('review');
+    }, 250);
   };
 
   // Reset workspace
@@ -137,117 +133,76 @@ export const App: React.FC = () => {
     setCurrentStep('upload');
     setColumnMapping({});
     setCleaningOptions(DEFAULT_CLEANING_OPTIONS);
+    setErrorMessage(null);
   };
 
   return (
-    <div className="app-layout">
+    <div className="min-h-screen bg-[#FAFBFF] text-[#17233F] flex flex-col font-body">
       {/* Top Header */}
-      <Header
-        onLoadSample={handleLoadSample}
-        onReset={handleReset}
-        hasData={Boolean(dataset)}
+      <Header />
+
+      {/* 4-Step Horizontal Tab Strip */}
+      <StepNav
+        currentStep={currentStep}
+        onSelectStep={setCurrentStep}
+        hasFile={Boolean(dataset)}
+        hasCleaned={Boolean(pipelineResult)}
       />
 
-      <main className="main-content">
-        {/* Stepper Navigation */}
-        <Stepper
-          currentStep={currentStep}
-          onSelectStep={setCurrentStep}
-          hasData={Boolean(dataset)}
-          isCleaned={Boolean(pipelineResult)}
-        />
-
-        {/* STEP 1: UPLOAD */}
+      {/* Main Content Area: max-width 1120px, centered, left-aligned text */}
+      <main className="flex-1 w-full max-w-[1120px] mx-auto px-4 sm:px-6">
+        {/* Step 1: Upload */}
         {currentStep === 'upload' && (
-          <DropZone
+          <UploadScreen
             onFileSelected={handleFileSelected}
             onLoadSample={handleLoadSample}
             isLoading={isLoading}
+            errorMessage={errorMessage}
+            onClearError={() => setErrorMessage(null)}
           />
         )}
 
-        {/* STEP 2: AUDIT & MAPPING */}
-        {currentStep === 'inspect' && dataset && (
-          <div className="step-content-fade">
-            {/* Health Meter & Score */}
-            <HealthGauge
-              healthScore={dataset.healthScore}
-              initialScore={pipelineResult?.stats.initialScore}
-            />
-
-            {/* Schema Mapper */}
-            <SchemaMapper
-              columns={dataset.columns}
-              mapping={columnMapping}
-              onChangeMapping={(src, tgt) => setColumnMapping((prev) => ({ ...prev, [src]: tgt }))}
-              onAutoMap={() => setColumnMapping(autoMapColumns(dataset.columns.map((c) => c.key)))}
-            />
-
-            {/* Cleaning Rule Drawer & CTA */}
-            <RuleControls
-              options={cleaningOptions}
-              onChangeOptions={(updated) => setCleaningOptions((prev) => ({ ...prev, ...updated }))}
-              onRunPipeline={handleRunPipeline}
-              isProcessing={isProcessing}
-            />
-
-            {/* Interactive Data Table */}
-            <DataTable
-              rows={dataset.rows}
-              columns={dataset.columns}
-              onOpenDiffModal={(row) => setDiffModalRow(row)}
-              isCleaned={Boolean(pipelineResult)}
-            />
-          </div>
+        {/* Step 2: Match columns */}
+        {currentStep === 'match' && dataset && (
+          <MatchColumnsScreen
+            filename={dataset.filename}
+            recordCount={dataset.rawRowCount}
+            columns={dataset.rawColumns || dataset.columns}
+            rows={dataset.rawRows || dataset.rows}
+            mapping={columnMapping}
+            onChangeMapping={(src, tgt) =>
+              setColumnMapping((prev) => ({ ...prev, [src]: tgt }))
+            }
+            onCleanRecords={handleRunPipeline}
+            isProcessing={isProcessing}
+          />
         )}
 
-        {/* STEP 3: CLEAN & EXPORT */}
-        {currentStep === 'clean' && dataset && pipelineResult && (
-          <div className="step-content-fade">
-            {/* Health Meter with Comparison */}
-            <HealthGauge
-              healthScore={dataset.healthScore}
-              initialScore={pipelineResult.stats.initialScore}
-            />
+        {/* Step 3: Review */}
+        {currentStep === 'review' && dataset && pipelineResult && (
+          <ReviewScreen
+            rows={dataset.rows}
+            columns={dataset.columns}
+            onProceedToExport={() => setCurrentStep('export')}
+          />
+        )}
 
-            {/* Multi-Stream Export Panel */}
-            <ExportPanel
-              cleanedRows={pipelineResult.cleanedRows}
-              quarantineRows={pipelineResult.quarantineRows}
-              duplicateRows={pipelineResult.duplicateRows}
-              auditLog={pipelineResult.auditLog}
-              stats={pipelineResult.stats}
-              filename={dataset.filename}
-            />
-
-            {/* Live Filterable Results Grid */}
-            <DataTable
-              rows={dataset.rows}
-              columns={dataset.columns}
-              onOpenDiffModal={(row) => setDiffModalRow(row)}
-              isCleaned={true}
-            />
-          </div>
+        {/* Step 4: Export */}
+        {currentStep === 'export' && dataset && pipelineResult && (
+          <ExportScreen
+            allRows={dataset.rows}
+            cleanedRows={pipelineResult.cleanedRows}
+            quarantineRows={pipelineResult.quarantineRows}
+            duplicateRows={pipelineResult.duplicateRows}
+            auditLog={pipelineResult.auditLog}
+            stats={pipelineResult.stats}
+            filename={dataset.filename}
+            healthScore={dataset.healthScore}
+            onStartOver={handleReset}
+          />
         )}
       </main>
-
-      {/* Side-by-Side Diff Modal */}
-      {diffModalRow && dataset && (
-        <DiffModal
-          row={diffModalRow}
-          columns={dataset.columns}
-          onClose={() => setDiffModalRow(null)}
-        />
-      )}
-
-      {/* Footer */}
-      <footer className="app-footer">
-        <p>
-          CleanSync MVP • Client-Side Customer Data Onboarding & Cleaning Engine
-        </p>
-      </footer>
     </div>
   );
 };
-
 export default App;

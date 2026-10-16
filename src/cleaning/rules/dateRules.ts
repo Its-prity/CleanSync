@@ -9,7 +9,7 @@ export interface CleanDateResult {
   isValid: boolean;
 }
 
-export function cleanDate(raw: any, options: { standardize?: boolean } = {}): CleanDateResult {
+export function cleanDate(raw: unknown, options: { standardize?: boolean } = {}): CleanDateResult {
   const original = String(raw ?? '');
   const trimmed = original.trim();
 
@@ -33,7 +33,8 @@ export function cleanDate(raw: any, options: { standardize?: boolean } = {}): Cl
       issue: {
         type: 'invalid_date',
         message: `Unparseable date "${trimmed}"`,
-        severity: 'error'
+        severity: 'error',
+        code: 'invalid_date'
       }
     };
   }
@@ -66,7 +67,8 @@ export function cleanDate(raw: any, options: { standardize?: boolean } = {}): Cl
       issue: {
         type: 'invalid_date',
         message: `Malformed date "${trimmed}"`,
-        severity: 'error'
+        severity: 'error',
+        code: 'invalid_date'
       }
     };
   }

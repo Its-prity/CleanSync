@@ -9,17 +9,23 @@ export interface CleanPhoneResult {
   isValid: boolean;
 }
 
-export function cleanPhone(raw: any, options: { standardize?: boolean } = {}): CleanPhoneResult {
+export function cleanPhone(raw: unknown, options: { standardize?: boolean } = {}): CleanPhoneResult {
   const original = String(raw ?? '');
   const trimmed = original.trim();
 
+  // Missing phone is a warning, not a fatal error
   if (!trimmed) {
     return {
       value: '',
       original,
       changed: false,
-      isValid: true, // Phone might be optional, empty is handled by missing_required check if configured
-      issue: undefined
+      isValid: true,
+      issue: {
+        type: 'missing_optional',
+        message: 'Phone number is missing',
+        severity: 'warning',
+        code: 'missing_optional'
+      }
     };
   }
 
@@ -34,7 +40,8 @@ export function cleanPhone(raw: any, options: { standardize?: boolean } = {}): C
       issue: {
         type: 'malformed_phone',
         message: `Contains alphabetical characters: "${trimmed}"`,
-        severity: 'error'
+        severity: 'error',
+        code: 'malformed_phone'
       }
     };
   }
@@ -51,7 +58,8 @@ export function cleanPhone(raw: any, options: { standardize?: boolean } = {}): C
       issue: {
         type: 'malformed_phone',
         message: `Phone number has only ${digits.length} digits (minimum 10 required)`,
-        severity: 'error'
+        severity: 'error',
+        code: 'malformed_phone'
       }
     };
   }
@@ -62,23 +70,22 @@ export function cleanPhone(raw: any, options: { standardize?: boolean } = {}): C
 
   if (options.standardize !== false) {
     if (digits.length === 10) {
-      formatted = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+      formatted = digits; // Keep standard digits or format (9876543210)
       if (formatted !== trimmed) {
         changed = true;
-        ruleApplied = 'Formatted to standard national (XXX) XXX-XXXX';
+        ruleApplied = 'Standardized 10-digit phone number';
       }
     } else if (digits.length === 11 && digits.startsWith('1')) {
-      formatted = `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+      formatted = `+1${digits.slice(1)}`;
       if (formatted !== trimmed) {
         changed = true;
-        ruleApplied = 'Formatted to E.164 +1 (XXX) XXX-XXXX';
+        ruleApplied = 'Standardized to E.164 +1';
       }
     } else if (digits.length > 10) {
-      // International or extended digits
       formatted = `+${digits}`;
       if (formatted !== trimmed) {
         changed = true;
-        ruleApplied = 'Formatted with international prefix';
+        ruleApplied = 'Standardized international phone number';
       }
     }
   }

@@ -13,6 +13,7 @@ const DOMAIN_TYPO_MAP: Record<string, string> = {
   'icld.com': 'icloud.com'
 };
 
+// Strict email regex requiring user, @, domain name, and at least one dot with valid TLD
 const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
 export interface CleanEmailResult {
@@ -24,20 +25,25 @@ export interface CleanEmailResult {
   isValid: boolean;
 }
 
-export function cleanEmail(raw: any, options: { fixTypos?: boolean; normalizeCase?: boolean } = {}): CleanEmailResult {
+export function cleanEmail(
+  raw: unknown,
+  options: { fixTypos?: boolean; normalizeCase?: boolean } = {}
+): CleanEmailResult {
   const original = String(raw ?? '');
   let value = original.trim();
 
+  // Missing optional field → Warning only
   if (!value) {
     return {
       value: '',
       original,
       changed: false,
-      isValid: false,
+      isValid: true,
       issue: {
-        type: 'missing_required',
-        message: 'Email address is empty',
-        severity: 'error'
+        type: 'missing_optional',
+        message: 'Email address is missing',
+        severity: 'warning',
+        code: 'missing_optional'
       }
     };
   }
@@ -74,14 +80,16 @@ export function cleanEmail(raw: any, options: { fixTypos?: boolean; normalizeCas
     issue = {
       type: 'invalid_email',
       message: `Invalid email format "${value}"`,
-      severity: 'error'
+      severity: 'error',
+      code: 'invalid_email'
     };
   } else if (changed && ruleApplied?.includes('Auto-corrected')) {
     issue = {
       type: 'email_typo',
       message: ruleApplied,
       suggestedFix: value,
-      severity: 'info'
+      severity: 'info',
+      code: 'email_typo'
     };
   }
 

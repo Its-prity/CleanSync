@@ -27,15 +27,15 @@ export function detectColumnType(values: any[]): DataType {
       emailCount++;
       continue;
     }
+    // Date check
+    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(val) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(val) || (!isNaN(Date.parse(val)) && val.length > 5 && !/^\d+$/.test(val))) {
+      dateCount++;
+      continue;
+    }
     // Phone check
     const digits = val.replace(/\D/g, '');
     if (digits.length >= 7 && digits.length <= 15 && (/^[\d+()\s-]+$/.test(val) || val.includes('-') || val.startsWith('+'))) {
       phoneCount++;
-      continue;
-    }
-    // Date check
-    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(val) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(val) || !isNaN(Date.parse(val)) && val.length > 5 && !/^\d+$/.test(val)) {
-      dateCount++;
       continue;
     }
     // Numeric check
@@ -116,12 +116,18 @@ export function analyzeDataset(rows: RowData[], columnKeys?: string[]): { column
       const strVal = String(val ?? '').trim();
 
       if (!strVal) {
-        if (col.key === 'email' || col.key === 'fullName') {
+        if (col.key === 'fullName' || col.key === 'full_name' || (col.key.toLowerCase().includes('name') && !col.key.toLowerCase().includes('company'))) {
           missingRequired++;
           issues[col.key] = {
             type: 'missing_required',
             message: `Required field ${col.originalLabel} is missing`,
             severity: 'error'
+          };
+        } else {
+          issues[col.key] = {
+            type: 'missing_optional',
+            message: `${col.originalLabel} is missing`,
+            severity: 'warning'
           };
         }
         continue;
@@ -179,7 +185,9 @@ export function analyzeDataset(rows: RowData[], columnKeys?: string[]): { column
       }
     }
 
-    row._issues = issues;
+    if (!row._issues || Object.keys(row._issues).length === 0) {
+      row._issues = issues;
+    }
   }
 
   const totalCells = rows.length * columns.length;

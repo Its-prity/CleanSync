@@ -1,0 +1,7 @@
+Customer Name,E-mail,Phone No.,City
+"  Prity Shaw  ",PRITY@example.com,9876543210,Surat
+Rahul Mehta,rahul@example.com,9876501234,Ahmedabad
+Ananya Patel,invalid-email,," Vadodara "
+,missingname@example.com,9876501111,Surat
+Rahul Mehta,rahul@example.com,9876501234,Ahmedabad
+Aarav Shah,,9876502222,Mumbai

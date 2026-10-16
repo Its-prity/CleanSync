@@ -43,6 +43,9 @@ export interface PipelineResult {
   stats: {
     initialRows: number;
     cleanCount: number;
+    validCount: number;
+    warningCount: number;
+    invalidCount: number;
     quarantineCount: number;
     duplicateCount: number;
     totalModifications: number;

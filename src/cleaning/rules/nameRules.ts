@@ -15,10 +15,12 @@ export function toTitleCase(str: string): string {
     .replace(/(?:^|\s|-|')\S/g, (char) => char.toUpperCase());
 }
 
-export function cleanName(raw: any, options: { titleCase?: boolean } = {}): CleanNameResult {
+export function cleanName(raw: unknown, options: { titleCase?: boolean } = {}): CleanNameResult {
   const original = String(raw ?? '');
+  // Collapse multiple internal whitespaces and trim leading/trailing
   let value = original.replace(/\s+/g, ' ').trim();
 
+  // Empty or whitespace-only name → Error
   if (!value) {
     return {
       value: '',
@@ -27,8 +29,9 @@ export function cleanName(raw: any, options: { titleCase?: boolean } = {}): Clea
       isValid: false,
       issue: {
         type: 'missing_required',
-        message: 'Name is empty',
-        severity: 'error'
+        message: 'Customer name is required',
+        severity: 'error',
+        code: 'missing_required'
       }
     };
   }
@@ -50,7 +53,7 @@ export function cleanName(raw: any, options: { titleCase?: boolean } = {}): Clea
     original,
     changed: changed || original !== value,
     ruleApplied,
-    isValid: true,
-    issue: undefined
+    issue: undefined,
+    isValid: true
   };
 }
